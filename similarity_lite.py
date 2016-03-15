@@ -162,9 +162,9 @@ class SimilarityLite():
 
     def update_all_idfs(self):
         update_query = """
-            UPDATE idfs SET idf = max(?/10.0, ?) / (doc_freq * 1.0)
+            UPDATE idfs SET idf = ? / (doc_freq * 1.0)
         """
-        self._write_query(update_query, (self.total_doc_count, self.total_doc_count))
+        self._write_query(update_query, (self.total_doc_count))
 
     def add_terms(self, terms):
         terms = set(terms)
@@ -202,7 +202,7 @@ class SimilarityLite():
             to_return.append(result)
         return to_return
 
-    def get_similar_docs(self, searched_doc_id):
+    def get_similar_docs(self, searched_doc_id, num_results=10):
         weights_of_searched_doc_query = """
             SELECT idfs.term_id, idfs.idf
             FROM idfs JOIN terms
@@ -260,7 +260,7 @@ class SimilarityLite():
 
         score_list = [(doc_id, score) for doc_id, score in scores_accumulator.iteritems()]
         score_list.sort(key=lambda x: x[1], reverse=True)
-        return score_list[:10]
+        return score_list[:num_results]
 
 
 
