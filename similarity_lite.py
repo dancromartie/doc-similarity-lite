@@ -11,7 +11,7 @@ class SimilarityLite():
             self, db_path, stop_words, tokenizer_func, idf_cutoff, 
             delete_existing_table=False):
 
-        assert isinstance(db_path, basestring)
+        assert isinstance(db_path, str)
         assert isinstance(stop_words, (list, set))
         assert hasattr(tokenizer_func, '__call__')
         assert isinstance(idf_cutoff, float)
@@ -21,8 +21,9 @@ class SimilarityLite():
         self.idf_cutoff = idf_cutoff
 
         if delete_existing_table:
-            logging.info("Deleting existing table because you told me to...")
-            os.remove(db_path)
+            if os.path.exists(db_path):
+                logging.info("Deleting existing table because you told me to...")
+                os.remove(db_path)
 
         self.db_conn = sqlite3.connect(db_path)
         self.total_doc_count = None
@@ -74,15 +75,13 @@ class SimilarityLite():
     def get_terms_from_docs(self, docs):
         terms_in_docs = set()
         for doc in docs:
-            tokenized = self._tokenize(doc)
+            tokenized = self._tokenize(doc["doc_text"])
             terms_in_docs.update(tokenized)
         return terms_in_docs
 
-    def _tokenize(self, doc):
-        pre_filter = self.tokenizer(doc)
-        #print "pre filter: %s" % pre_filter
+    def _tokenize(self, text):
+        pre_filter = self.tokenizer(text)
         post_filter = [x for x in pre_filter if x not in self.stop_words]
-        #print "post filter: %s" % post_filter
         return post_filter
 
     def get_term_ids_mapping_from_docs(self, docs):
@@ -114,11 +113,12 @@ class SimilarityLite():
             insert_data.append((doc["id"], doc["doc_text"]))
         self._write_query(insert_query, insert_data, many=True)
 
+        # Potentially expensive operations, thus not required to do whenever document is added
         if update_everything:
             self.update_doc_count()
             self.add_terms_from_docs(docs)
             self.update_postings(docs)
-            ids_of_new_terms = self.get_term_ids_mapping_from_docs(docs).values()
+            ids_of_new_terms = list(self.get_term_ids_mapping_from_docs(docs).values())
             self.update_idfs(ids_of_new_terms)
 
     def update_postings(self, docs):
@@ -126,7 +126,7 @@ class SimilarityLite():
         insert_query = "INSERT INTO postings (term_id, doc_id) VALUES (?, ?)"
         insert_data = []
         for doc in docs:
-            tokens = self._tokenize(doc)
+            tokens = self._tokenize(doc["doc_text"])
             for token in tokens:
                 term_id = term_ids_mapping[token]
                 insert_data.append((term_id, doc["id"]))
@@ -202,18 +202,21 @@ class SimilarityLite():
             to_return.append(result)
         return to_return
 
-    def get_similar_docs(self, searched_doc_id, num_results=10):
+    def get_similar_docs(self, user_search_query, num_results=10):
+        tokenized_query = self.tokenizer(user_search_query)
+        question_marks = ",".join("?" for term in tokenized_query)
+
         weights_of_searched_doc_query = """
             SELECT idfs.term_id, idfs.idf
             FROM idfs JOIN terms
             ON idfs.term_id = terms.id
             JOIN postings
             ON postings.term_id = idfs.term_id
-            WHERE postings.doc_id = ?
-        """
+            WHERE terms.term IN (%s)
+        """ % question_marks
         weights_results = self._get_rows_from_query(
             weights_of_searched_doc_query,
-            (searched_doc_id,)
+            tokenized_query
         )
         weights_of_searched = {}
         for term_id, idf in weights_results:
@@ -221,27 +224,25 @@ class SimilarityLite():
 
         # TODO actually use idf, not freq
         docs_sharing_terms_query = """
-            SELECT p2.doc_id, p2.term_id, idfs.idf, terms.term
-            FROM postings p1 JOIN idfs
-            ON p1.term_id = idfs.term_id
-            JOIN postings p2
-            ON p2.term_id = idfs.term_id
+            SELECT p.doc_id, p.term_id, idfs.idf, terms.term
+            FROM postings p
+            JOIN idfs
+            ON p.term_id = idfs.term_id
             JOIN terms
             ON terms.id = idfs.term_id
+            AND terms.term IN (%s)
             WHERE idf > ?
-            AND p1.doc_id = ?
-            AND p2.doc_id != ? 
-        """
+        """ % question_marks
         shared_term_results = self._get_rows_from_query(
             docs_sharing_terms_query,
-            (self.idf_cutoff, searched_doc_id, searched_doc_id)
+            tuple(tokenized_query + [self.idf_cutoff])
         )
 
         scores_accumulator = {}
         sum_squares = {}
-        sum_squares[searched_doc_id] = 0
-        for idf in weights_of_searched.values():
-            sum_squares[searched_doc_id] += idf ** 2
+        sum_squares["searched_doc_pseudo_id"] = 0
+        for idf in list(weights_of_searched.values()):
+            sum_squares["searched_doc_pseudo_id"] += idf ** 2
 
         for doc_id, term_id, idf, term in shared_term_results:
             if doc_id not in sum_squares:
@@ -253,12 +254,12 @@ class SimilarityLite():
                 # TODO use term frequency and not just IDF?
                 scores_accumulator[doc_id] += weights_of_searched[term_id] ** 2
         
-        for doc_id, score in scores_accumulator.iteritems():
+        for doc_id, score in scores_accumulator.items():
             candidate_norm = sum_squares[doc_id] ** .5
-            searched_doc_norm = sum_squares[searched_doc_id] ** .5
+            searched_doc_norm = sum_squares["searched_doc_pseudo_id"] ** .5
             scores_accumulator[doc_id] = score / candidate_norm / searched_doc_norm
 
-        score_list = [(doc_id, score) for doc_id, score in scores_accumulator.iteritems()]
+        score_list = [(doc_id, score) for doc_id, score in scores_accumulator.items()]
         score_list.sort(key=lambda x: x[1], reverse=True)
         return score_list[:num_results]
 
