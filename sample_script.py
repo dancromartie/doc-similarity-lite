@@ -53,11 +53,11 @@ def main():
     print("***********SEARCHED***************")
     print(search_query)
     print("***********TOP RESULTS***************")
-    for result in similar_docs[0:10]:
-        print(docs_by_id[result[0]], result[1])
+    for id_, similarity in similar_docs[0:10]:
+        print(docs_by_id[id_], similarity)
     print("***********BOTTOM RESULTS***************")
-    for result in similar_docs[-10:]:
-        print(docs_by_id[result[0]], result[1])
+    for id_, similarity in similar_docs[-10:]:
+        print(docs_by_id[id_], similarity)
 
 
 if __name__ == "__main__":
