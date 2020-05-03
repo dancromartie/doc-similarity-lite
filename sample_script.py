@@ -6,28 +6,6 @@ import similarity_lite
 stop_words = ["the", "a"]
 tokenizer_func = lambda x: x.strip().split()
 
-# For fake doc generation
-candidate_words = """
-    Amdahl's law is often used in parallel computing to predict the theoretical
-    speedup when using multiple processors. For example, if a program needs 20
-    hours using a single processor core, and a particular part of the program which
-    takes one hour to execute cannot be parallelized, while the remaining 19 hours
-    (p = 0.95) of execution time can be parallelized, then regardless of how many
-    processors are devoted to a parallelized execution of this program, the minimum
-    execution time cannot be less than that critical one hour. Hence, the
-    theoretical speedup is limited to at most 20 times (1/(1 - p) = 20). For this
-    reason parallel computing is relevant only for a low number of processors and
-    very parallelizable programs
-""".lower().split()
-candidate_words = [c for c in candidate_words if re.match('^[a-zA-Z0-9]+$', c)]
-
-
-def random_fake_doc_text():
-    doc_words = [random.choice(candidate_words) for _ in range(5)]
-    doc_words.sort()
-    doc_text = " ".join(doc_words)
-    return doc_text
-    
 
 def main():
     similarity_obj = similarity_lite.SimilarityLite(
@@ -38,25 +16,34 @@ def main():
         delete_existing_table=True
     )
 
+    sentences = [
+        "apple sauce is a watery mix of apples and other stuff",
+        "apple juice is like water but made from apples",
+        "pie can be made from apple, pumpkin, cherry, etc",
+        "apple pie is considered very american",
+        "apple is a very rich company",
+        "a pumpkin is a kind of gourd that grows in the ground",
+        "smashing a pumpkin is a beloved activity in the country",
+        "pie can refer to pizza or the dessert",
+        "some say pizza is better than apple pie, because pie is too rich",
+        "pizza pie has a very rich history",
+    ]
+
     docs = []
     docs_by_id = {}
-    num_docs = 100 * 1000
-    for i in range(num_docs):
-        doc = {"id": str(i), "doc_text": random_fake_doc_text()}
+    for i, text in enumerate(sentences):
+        doc = {"id": str(i), "doc_text": text}
         docs.append(doc)
         docs_by_id[str(i)] = doc
 
-    similarity_obj.add_or_update_docs(docs, update_everything=True)
+    similarity_obj.add_or_update_docs(docs, update_stats=True)
 
-    search_query = docs_by_id["500"]["doc_text"]
-    similar_docs = similarity_obj.get_similar_docs(search_query, num_results=num_docs)
+    search_query = "rich apple pie"
+    similar_docs = similarity_obj.get_similar_docs(search_query)
     print("***********SEARCHED***************")
     print(search_query)
-    print("***********TOP RESULTS***************")
+    print("***********RANKED RESULTS***************")
     for id_, similarity in similar_docs[0:10]:
-        print(docs_by_id[id_], similarity)
-    print("***********BOTTOM RESULTS***************")
-    for id_, similarity in similar_docs[-10:]:
         print(docs_by_id[id_], similarity)
 
 

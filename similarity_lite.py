@@ -101,7 +101,7 @@ class SimilarityLite():
     def add_terms_from_docs(self, docs):
         self.add_terms(self.get_terms_from_docs(docs))
 
-    def add_or_update_docs(self, docs, update_everything=False):
+    def add_or_update_docs(self, docs, update_stats=False):
         if len(docs) > 200:
             logging.warn("You are probably using too many docs at one time.")
         assert isinstance(docs, list)
@@ -114,7 +114,7 @@ class SimilarityLite():
         self._write_query(insert_query, insert_data, many=True)
 
         # Potentially expensive operations, thus not required to do whenever document is added
-        if update_everything:
+        if update_stats:
             self.update_doc_count()
             self.add_terms_from_docs(docs)
             self.update_postings(docs)
